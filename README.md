@@ -1,2 +1,43 @@
-# line-checkin
-line-checkin
+# line-checkin：學生 LINE 定位簽到系統
+
+學生用 LINE 打開簽到頁，按一下就用手機 GPS 簽到（iPhone、Android 都能用）。
+老師在 LINE 裡看到誰到了、誰還沒到。上課 10 分鐘後學生還沒簽到，系統會自動私訊該生的家長；學生晚到補簽後，再通知家長「已到」。
+
+- **全部免費**：Google 試算表 + Apps Script + LINE 官方帳號免費方案
+- **老師後台就是 Google 試算表**：名單、課表、請假、停課、配對都在試算表裡維護
+- **隱私**：家長之間互相看不到；系統不保存學生的經緯度，只記錄距離
+
+## 功能
+
+| 對象 | 功能 |
+|---|---|
+| 學生 | 在 LINE 打開簽到頁 → 📍 定位簽到；看自己今天的課與簽到狀態 |
+| 老師 | 在 LINE 打開同一個連結 → 今日看板（已到／未到／請假），未到的學生可以代簽 |
+| 家長 | 孩子未到時收到私訊，孩子補到後再收到一則「已到」 |
+| 系統 | 課前 15 分鐘開放簽到、準時或遲到判斷、請假與停課不通知、同一堂課不重複通知 |
+
+## 檔案
+
+```
+gas/          Google Apps Script 後端（貼到試算表的 Apps Script 編輯器）
+  Logic.gs      純邏輯（距離、時間、狀態判斷）
+  Sheets.gs     試算表結構與讀寫
+  Line.gs       LINE API（推播、回覆、ID token 驗證）
+  Main.gs       Web App 入口：LINE webhook 與 LIFF 呼叫
+  Notify.gs     每分鐘檢查未到、通知家長
+  Setup.gs      試算表選單、觸發器
+docs/         LIFF 簽到網頁（放在 GitHub Pages）
+guide/        設定教學、家長同意書範本
+test/         Node 測試（邏輯與完整流程）
+備忘.md       實作過程與設計判斷紀錄
+```
+
+## 開始使用
+
+照著 [guide/設定教學.md](guide/設定教學.md) 做，約 1～2 小時。
+
+## 開發
+
+```bash
+npm test   # 需要 Node 18+，不用安裝任何套件
+```

@@ -1,0 +1,182 @@
+<!doctype html>
+<html lang="zh-Hant">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>上課簽到</title>
+<style>
+  :root {
+    --bg: #f5f6f8; --card: #fff; --text: #1d2129; --muted: #6b7280;
+    --brand: #06c755; --brand-dark: #05a847; --warn: #d97706; --bad: #dc2626; --line: #e5e7eb;
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; font-family: -apple-system, "PingFang TC", "Noto Sans TC", "Microsoft JhengHei", sans-serif;
+         background: var(--bg); color: var(--text); font-size: 16px; }
+  main { max-width: 520px; margin: 0 auto; padding: 16px 16px calc(24px + env(safe-area-inset-bottom)); }
+  h1 { font-size: 20px; margin: 4px 0 16px; }
+  h2 { font-size: 17px; margin: 0 0 8px; }
+  .card { background: var(--card); border-radius: 14px; padding: 16px; margin-bottom: 12px; box-shadow: 0 1px 2px rgba(0,0,0,.05); }
+  .muted { color: var(--muted); font-size: 14px; }
+  .btn { display: block; width: 100%; border: 0; border-radius: 12px; padding: 16px; font-size: 18px; font-weight: 600;
+         background: var(--brand); color: #fff; margin-top: 12px; }
+  .btn:active { background: var(--brand-dark); }
+  .btn:disabled { background: #9ca3af; }
+  .btn.small { display: inline-block; width: auto; padding: 6px 12px; font-size: 14px; margin: 0; }
+  .msg { padding: 12px; border-radius: 10px; margin-top: 12px; }
+  .msg.ok { background: #e7f9ee; color: #065f46; }
+  .msg.err { background: #fdecec; color: #991b1b; }
+  .tag { display: inline-block; padding: 2px 8px; border-radius: 999px; font-size: 13px; font-weight: 600; }
+  .tag.準時, .tag.老師代簽 { background: #e7f9ee; color: #065f46; }
+  .tag.遲到 { background: #fef3c7; color: #92400e; }
+  .tag.未到, .tag.未簽到 { background: #fdecec; color: #991b1b; }
+  .tag.請假 { background: #e5e7eb; color: #374151; }
+  .row { display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 10px 0; border-top: 1px solid var(--line); }
+  .row:first-of-type { border-top: 0; }
+  .summary { display: flex; gap: 12px; margin: 4px 0 8px; font-size: 14px; }
+  .hidden { display: none; }
+</style>
+</head>
+<body>
+<main>
+  <h1 id="title">上課簽到</h1>
+  <div id="loading" class="card muted">載入中…</div>
+  <div id="app"></div>
+</main>
+
+<script src="https://static.line-scdn.net/liff/edge/2/sdk.js"></script>
+<script src="config.js"></script>
+<script>
+(function () {
+  var cfg = window.APP_CONFIG;
+  var app = document.getElementById('app');
+  var idToken = null;
+
+  function esc(s) {
+    return String(s == null ? '' : s).replace(/[&<>"']/g, function (c) {
+      return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c];
+    });
+  }
+
+  // 用 text/plain 送 JSON，避免 CORS 預檢（Apps Script 不處理 OPTIONS）。
+  function api(action, data) {
+    var body = Object.assign({ action: action, idToken: idToken }, data || {});
+    return fetch(cfg.API_URL, { method: 'POST', headers: { 'Content-Type': 'text/plain;charset=utf-8' }, body: JSON.stringify(body) })
+      .then(function (r) { return r.json(); });
+  }
+
+  function showError(text) {
+    document.getElementById('loading').classList.add('hidden');
+    app.innerHTML = '<div class="card"><div class="msg err">' + esc(text) + '</div></div>';
+  }
+
+  function render(data) {
+    document.getElementById('loading').classList.add('hidden');
+    if (data.schoolName) document.getElementById('title').textContent = data.schoolName + '・簽到';
+    if (!data.ok) return showError(data.message);
+    if (data.role === '學生') return renderStudent(data);
+    if (data.role === '老師') return renderTeacher(data.dashboard);
+    app.innerHTML = '<div class="card">' + esc(data.message || '') + '</div>';
+  }
+
+  /* ---------- 學生 ---------- */
+  function renderStudent(data) {
+    var html = '<div class="card"><h2>' + esc(data.student.name) + ' 同學</h2>';
+    if (!data.courses.length) {
+      html += '<p class="muted">今天沒有你的課。</p></div>';
+      app.innerHTML = html;
+      return;
+    }
+    data.courses.forEach(function (c) {
+      html += '<div class="row"><div><div>' + esc(c.name) + '</div><div class="muted">' + esc(c.start) + '–' + esc(c.end) +
+        (c.place ? '・' + esc(c.place) : '') + '</div></div><span class="tag ' + esc(c.status) + '">' + esc(c.status) +
+        (c.time ? ' ' + esc(c.time) : '') + '</span></div>';
+    });
+    html += '<button class="btn" id="checkin">📍 定位簽到</button><div id="result"></div>' +
+      '<p class="muted">按下後請允許 LINE 使用位置資訊。系統只記錄「是否在教室範圍內」與距離，不保存你的位置。</p></div>';
+    app.innerHTML = html;
+    document.getElementById('checkin').onclick = checkin;
+  }
+
+  function checkin() {
+    var btn = document.getElementById('checkin');
+    var result = document.getElementById('result');
+    btn.disabled = true;
+    btn.textContent = '定位中…';
+    if (!navigator.geolocation) {
+      result.innerHTML = '<div class="msg err">這支手機不支援定位，請找老師代簽。</div>';
+      btn.disabled = false; btn.textContent = '📍 定位簽到';
+      return;
+    }
+    navigator.geolocation.getCurrentPosition(function (pos) {
+      btn.textContent = '簽到中…';
+      api('checkin', { lat: pos.coords.latitude, lng: pos.coords.longitude, accuracy: pos.coords.accuracy })
+        .then(function (res) {
+          result.innerHTML = '<div class="msg ' + (res.ok ? 'ok' : 'err') + '">' + esc(res.message) + '</div>';
+          if (res.ok) setTimeout(load, 1500);
+        })
+        .catch(function () { result.innerHTML = '<div class="msg err">網路錯誤，請再試一次。</div>'; })
+        .then(function () { btn.disabled = false; btn.textContent = '📍 定位簽到'; });
+    }, function (err) {
+      var text = err.code === 1
+        ? '你拒絕了定位權限。請到手機「設定 → LINE → 位置」改成「使用 App 期間」，再重開此頁。'
+        : '抓不到定位，請移到窗邊、開啟 GPS 與 Wi-Fi 後再試。';
+      result.innerHTML = '<div class="msg err">' + text + '</div>';
+      btn.disabled = false; btn.textContent = '📍 定位簽到';
+    }, { enableHighAccuracy: true, timeout: 15000, maximumAge: 0 });
+  }
+
+  /* ---------- 老師 ---------- */
+  function renderTeacher(d) {
+    var html = '<p class="muted">' + esc(d.date) + '　更新於 ' + esc(d.time) +
+      '　<button class="btn small" id="refresh">重新整理</button></p>';
+    if (!d.courses.length) html += '<div class="card muted">今天沒有課。</div>';
+    d.courses.forEach(function (c) {
+      var count = { arrived: 0, absent: 0, leave: 0 };
+      c.students.forEach(function (s) {
+        if (s.status === '未到') count.absent++; else if (s.status === '請假') count.leave++; else count.arrived++;
+      });
+      // 未到的排前面，老師一眼看到
+      var order = { '未到': 0, '遲到': 1, '請假': 3 };
+      var list = c.students.slice().sort(function (a, b) {
+        return (order[a.status] == null ? 2 : order[a.status]) - (order[b.status] == null ? 2 : order[b.status]);
+      });
+      html += '<div class="card"><h2>' + esc(c.name) + '</h2><div class="muted">' + esc(c.start) + '–' + esc(c.end) +
+        (c.place ? '・' + esc(c.place) : '') + '</div><div class="summary"><span>✅ 已到 ' + count.arrived +
+        '</span><span>❌ 未到 ' + count.absent + '</span><span>📝 請假 ' + count.leave + '</span></div>';
+      list.forEach(function (s) {
+        html += '<div class="row"><div>' + esc(s.name) + ' <span class="muted">' + esc(s.id) + '</span></div><div>' +
+          '<span class="tag ' + esc(s.status) + '">' + esc(s.status) + (s.time ? ' ' + esc(s.time) : '') + '</span>' +
+          (s.status === '未到' ? ' <button class="btn small" data-course="' + esc(c.id) + '" data-student="' + esc(s.id) +
+          '" data-name="' + esc(s.name) + '">代簽</button>' : '') + '</div></div>';
+      });
+      html += '</div>';
+    });
+    html += '<div id="result"></div>';
+    app.innerHTML = html;
+    document.getElementById('refresh').onclick = load;
+    Array.prototype.forEach.call(app.querySelectorAll('[data-student]'), function (b) {
+      b.onclick = function () {
+        if (!confirm('確定替 ' + b.dataset.name + ' 代簽？')) return;
+        b.disabled = true;
+        api('manualCheckin', { courseId: b.dataset.course, studentId: b.dataset.student }).then(function (res) {
+          if (res.dashboard) renderTeacher(res.dashboard);
+          alert(res.message);
+        });
+      };
+    });
+  }
+
+  function load() {
+    api('me').then(render).catch(function () { showError('連線失敗，請稍後再試。'); });
+  }
+
+  liff.init({ liffId: cfg.LIFF_ID }).then(function () {
+    if (!liff.isLoggedIn()) { liff.login(); return; }
+    idToken = liff.getIDToken();
+    if (!idToken) return showError('無法取得登入資訊，請確認 LIFF 的 Scope 有勾選 openid 與 profile。');
+    load();
+  }).catch(function (e) { showError('LIFF 初始化失敗：' + e.message); });
+})();
+</script>
+</body>
+</html>

@@ -1,0 +1,8 @@
+{
+  "name": "line-checkin",
+  "private": true,
+  "description": "學生 LINE 定位簽到系統",
+  "scripts": {
+    "test": "node --test test/*.test.js"
+  }
+}

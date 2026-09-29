@@ -82,7 +82,8 @@
   function renderStudent(data) {
     var html = '<div class="card"><h2>' + esc(data.student.name) + ' 同學</h2>';
     if (!data.courses.length) {
-      html += '<p class="muted">今天沒有你的課。</p></div>';
+      html += '<p class="muted">今天沒有你的課（你的班級：' + esc(data.student.classes || '未設定') +
+        '）。如果今天應該有課，請老師檢查課表的班級、星期是否填對。</p></div>';
       app.innerHTML = html;
       return;
     }

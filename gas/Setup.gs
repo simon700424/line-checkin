@@ -4,6 +4,7 @@ function onOpen() {
   SpreadsheetApp.getUi().createMenu('簽到系統')
     .addItem('1. 初始化試算表', 'setupSheets')
     .addItem('2. 啟用自動通知（每分鐘檢查）', 'installTrigger')
+    .addItem('3. 檢查設定（班級、學號、配對）', 'checkSetup')
     .addItem('停用自動通知', 'removeTrigger')
     .addSeparator()
     .addItem('立即檢查一次未到', 'checkAbsences')
@@ -36,4 +37,23 @@ function testPushSelected() {
   if (!userId || row === 1) return;
   var ok = push_(userId, '這是簽到系統的測試訊息，收到代表設定成功 🎉');
   SpreadsheetApp.getUi().alert(ok ? '已送出給 ' + name : '送出失敗，請看「執行作業」記錄');
+}
+
+/** 檢查名單、課表、配對是否對得上，用對話框列出問題。 */
+function checkSetup() {
+  var problems = [];
+  var courses = getCourses_(problems);
+  problems = problems.concat(findSetupProblems(getStudents_(), courses, getFriends_()));
+  var settings = getSettings_();
+  if (!settings.loginChannelId) problems.push('「設定」表還沒填 LINE Login Channel ID。');
+  if (!settings.liffUrl) problems.push('「設定」表還沒填 LIFF網址。');
+  if (!PropertiesService.getScriptProperties().getProperty('LINE_CHANNEL_ACCESS_TOKEN')) {
+    problems.push('指令碼屬性還沒設定 LINE_CHANNEL_ACCESS_TOKEN，家長會收不到通知。');
+  }
+  if (!ScriptApp.getProjectTriggers().some(function (t) { return t.getHandlerFunction() === 'checkAbsences'; })) {
+    problems.push('還沒啟用自動通知（選單 2）。');
+  }
+  SpreadsheetApp.getUi().alert(problems.length
+    ? '發現 ' + problems.length + ' 個問題：\n\n・' + problems.join('\n・')
+    : '✅ 設定看起來都沒問題！');
 }

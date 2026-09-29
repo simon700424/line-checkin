@@ -110,3 +110,46 @@ function evaluateLocation(pos, course, maxAccuracy) {
 function isAbsentNoticeDue(nowMin, course, delayMin) {
   return nowMin >= course.startMin + delayMin && nowMin <= course.endMin;
 }
+
+/**
+ * 檢查名單、課表、配對之間是否對得上，回傳給老師看的問題清單（字串陣列）。
+ * students: [{id, classes}]、courses: [{id, classes, radius}]、friends: [{name, role, studentIds}]
+ */
+function findSetupProblems(students, courses, friends) {
+  var problems = [];
+  var studentIds = students.map(function (s) { return s.id; });
+  var studentClasses = {};
+  students.forEach(function (s) { splitIds(s.classes).forEach(function (c) { studentClasses[c] = true; }); });
+  var courseClasses = {};
+  courses.forEach(function (c) { splitIds(c.classes).forEach(function (k) { courseClasses[k] = true; }); });
+
+  courses.forEach(function (c) {
+    var classes = splitIds(c.classes);
+    if (!classes.some(function (k) { return studentClasses[k]; })) {
+      problems.push('課表「' + c.id + '」的班級「' + classes.join(', ') + '」在學生表裡找不到，這堂課不會有任何學生。學生表的班級有：' +
+        (Object.keys(studentClasses).join(', ') || '（空）'));
+    }
+    if (c.radius < 80) {
+      problems.push('課表「' + c.id + '」半徑只有 ' + c.radius + ' 公尺，室內 GPS 常偏差幾十公尺，建議 80～150。');
+    }
+  });
+  Object.keys(studentClasses).forEach(function (k) {
+    if (!courseClasses[k]) problems.push('學生表的班級「' + k + '」在課表裡沒有任何課。');
+  });
+
+  friends.forEach(function (f) {
+    var label = 'LINE好友「' + f.name + '」';
+    if (!f.role) {
+      problems.push(label + '還沒填角色（學生／家長／老師）。');
+    } else if (f.role === '學生') {
+      if (f.studentIds.length !== 1) problems.push(label + '是學生，學號欄要填剛好一個學號。');
+      else if (studentIds.indexOf(f.studentIds[0]) < 0) problems.push(label + '的學號「' + f.studentIds[0] + '」不在學生表裡。');
+    } else if (f.role === '家長') {
+      if (!f.studentIds.length) problems.push(label + '是家長，學號欄要填孩子的學號。');
+      f.studentIds.forEach(function (id) {
+        if (studentIds.indexOf(id) < 0) problems.push(label + '填的學號「' + id + '」不在學生表裡。');
+      });
+    }
+  });
+  return problems;
+}

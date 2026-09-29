@@ -114,7 +114,7 @@ function actionMe_(me, friend, settings) {
   if (friend.role === '學生') {
     var student = findStudent_(friend.studentIds[0]);
     if (!student) return { ok: true, role: '', displayName: me.name, schoolName: settings.schoolName, message: '學號設定有誤，請通知老師。' };
-    base.student = { id: student.id, name: student.name };
+    base.student = { id: student.id, name: student.name, classes: student.classes };
     base.courses = studentTodayCourses_(student);
     return base;
   }

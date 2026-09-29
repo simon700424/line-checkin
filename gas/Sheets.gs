@@ -131,8 +131,8 @@ function getStudents_() {
   });
 }
 
-/** 課表中格式正確的課；格式錯誤的列略過並寫進執行記錄，方便老師排查。 */
-function getCourses_() {
+/** 課表中格式正確的課；格式錯誤的列略過，原因放進 problems（若有傳入）。 */
+function getCourses_(problems) {
   var out = [];
   readTable_('courses').forEach(function (r, i) {
     var c = {
@@ -148,7 +148,9 @@ function getCourses_() {
       radius: Number(r['半徑公尺']) || 100
     };
     if (!c.id || !c.weekday || c.startMin === null || c.endMin === null || !c.lat || !c.lng) {
-      console.warn('課表第 ' + (i + 2) + ' 列格式不完整，已略過');
+      var msg = '課表第 ' + (i + 2) + ' 列（' + (c.id || '無課程ID') + '）格式不完整，已略過：請檢查星期、開始、結束（例如 18:30）、緯度、經度。';
+      console.warn(msg);
+      if (problems) problems.push(msg);
       return;
     }
     out.push(c);

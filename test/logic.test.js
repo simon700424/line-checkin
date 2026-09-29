@@ -86,3 +86,23 @@ test('isAbsentNoticeDue', () => {
   assert.ok(L.isAbsentNoticeDue(1110 + 10, course, 10));
   assert.ok(!L.isAbsentNoticeDue(course.endMin + 1, course, 10));
 });
+
+test('findSetupProblems：課表班級對不到學生、學生缺學號、半徑太小', () => {
+  const students = [{ id: '410621', classes: '觀二甲' }];
+  const courses = [{ id: 'D2', classes: 'A', radius: 50 }];
+  const friends = [
+    { name: '李國祿老師', role: '學生', studentIds: [] },
+    { name: '陳慈宇', role: '學生', studentIds: ['410621'] },
+    { name: '某家長', role: '家長', studentIds: ['999'] },
+    { name: '新朋友', role: '', studentIds: [] }
+  ];
+  const p = Array.from(L.findSetupProblems(students, courses, friends)).join('\n');
+  assert.match(p, /課表「D2」的班級「A」在學生表裡找不到.*觀二甲/);
+  assert.match(p, /學生表的班級「觀二甲」在課表裡沒有任何課/);
+  assert.match(p, /半徑只有 50/);
+  assert.match(p, /李國祿老師」是學生，學號欄要填剛好一個學號/);
+  assert.match(p, /某家長」填的學號「999」不在學生表裡/);
+  assert.match(p, /新朋友」還沒填角色/);
+  assert.doesNotMatch(p, /陳慈宇/);
+  assert.strictEqual(L.findSetupProblems(students, [{ id: 'D2', classes: '觀二甲', radius: 100 }], [friends[1]]).length, 0);
+});

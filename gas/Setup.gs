@@ -7,7 +7,7 @@ function onOpen() {
     .addItem('3. 檢查設定（班級、學號、配對）', 'checkSetup')
     .addItem('停用自動通知', 'removeTrigger')
     .addSeparator()
-    .addItem('立即檢查一次未到', 'checkAbsences')
+    .addItem('立即檢查一次未到', 'checkAbsencesNow')
     .addItem('測試推播給選取列的 LINE 使用者', 'testPushSelected')
     .addToUi();
 }
@@ -22,6 +22,13 @@ function removeTrigger() {
   ScriptApp.getProjectTriggers().forEach(function (t) {
     if (t.getHandlerFunction() === 'checkAbsences') ScriptApp.deleteTrigger(t);
   });
+}
+
+/** 選單用：立即檢查並顯示結果。每位學生每堂課只會通知一次，所以已通知過的不會重發。 */
+function checkAbsencesNow() {
+  var sent = checkAbsences();
+  SpreadsheetApp.getUi().alert('檢查完成：這次新增 ' + sent + ' 筆未到通知。\n' +
+    '（每位學生每堂課只通知一次，已通知過的不會重發）\n\n' + todaySummary_());
 }
 
 /** 在「LINE好友」表選一列，推一則測試訊息給他，確認 token 與配對正確。 */

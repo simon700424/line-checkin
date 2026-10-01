@@ -171,3 +171,24 @@ test('停課日不通知、webhook 加好友會登記', () => {
   call({ destination: 'x', events: [{ type: 'follow', replyToken: 'r', source: { type: 'user', userId: 'U_x' } }] });
   assert.ok(sheets['LINE好友'].rows.some((r) => r[0] === 'U_x' && r[1] === '新朋友'));
 });
+
+test('立即檢查：已通知過不重發，並回傳今日摘要（重現 2026-10-01 狀況）', () => {
+  const clock = { now: new Date('2026-10-01T15:41:00+08:00').getTime() }; // 星期四
+  const { ctx, sheets, call } = makeEnv(clock);
+  ctx.setupSheets();
+  sheets['學生'].rows.push(['410601', '尤沛筠', '觀二甲', '在學'], ['410609', '柯雅娟', '觀二甲', '在學'], ['410615', '葉翊涵', '觀二甲', '在學']);
+  sheets['課表'].rows.push(['A4', '到校簽到', '觀二甲', '四', '08:05', '16:10', '教室', '21.9938173', '120.747958', '150']);
+  sheets['請假'].rows.push(['2026/10/01', '410609', 'A4', '事']);
+  sheets['簽到紀錄'].rows.push(['2026-10-01', 'A4', '410601', '尤沛筠', '8:17', '遲到', 73, 31]);
+  sheets['通知紀錄'].rows.push(['2026-10-01', 'A4', '410615', '未到', '8:45', 0, '無配對家長']);
+
+  assert.strictEqual(ctx.checkAbsences(), 0, '葉翊涵已通知過，不重發');
+  assert.strictEqual(sheets['通知紀錄'].rows.length, 2);
+  const summary = ctx.todaySummary_();
+  assert.match(summary, /已到 1 人/);
+  assert.match(summary, /請假 1 人：柯雅娟/);
+  assert.match(summary, /未到 1 人：葉翊涵（已通知）/);
+
+  sheets['學生'].rows.push(['410699', '新同學', '觀二甲', '在學']);
+  assert.strictEqual(ctx.checkAbsences(), 1, '新的未到學生才會新增');
+});

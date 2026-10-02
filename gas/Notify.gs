@@ -135,6 +135,7 @@ function notifyArrivedIfNeeded_(student, course, now, status, settings) {
 function todaySummary_() {
   var now = now_();
   var notices = getNotices_(now.dateStr);
+  var delayMin = getSettings_().delayMin;
   var d = buildDashboard_();
   if (!d.courses.length) return '今天（' + now.dateStr + '）沒有課。';
   return d.courses.map(function (c) {
@@ -147,7 +148,12 @@ function todaySummary_() {
       } else arrived.push(s.name);
     });
     var t = notices.filter(function (x) { return x.courseId === c.id && x.type === '通知老師'; })[0];
-    return '【' + c.name + ' ' + c.start + '–' + c.end + '】' + (t ? '（已傳名單給老師）' : '（尚未到通知老師時間）') + '\n' +
+    var noticeAt = parseHm(c.start) + delayMin;
+    var teacherState = t ? '已於 ' + t.time + ' 傳名單給老師'
+      : now.minutes < noticeAt ? '將於 ' + formatHm(noticeAt) + ' 傳名單給老師'
+      : now.minutes > parseHm(c.end) ? '已下課，今天沒有傳名單給老師（當時自動檢查可能沒有執行）'
+      : '下一分鐘會傳名單給老師';
+    return '【' + c.name + ' ' + c.start + '–' + c.end + '】\n' + teacherState + '\n' +
       '已到 ' + arrived.length + ' 人\n' +
       '請假 ' + leave.length + ' 人' + (leave.length ? '：' + leave.join('、') : '') + '\n' +
       '未到 ' + absent.length + ' 人' + (absent.length ? '：' + absent.join('、') : '');

@@ -201,7 +201,16 @@ test('立即檢查：已通知過不重發，並回傳今日摘要（重現 2026
   assert.strictEqual(ctx.checkAbsences(), 0, '今天已傳過名單給老師，不重發');
   assert.strictEqual(sheets['通知紀錄'].rows.length, 2);
   const summary = ctx.todaySummary_();
-  assert.match(summary, /已傳名單給老師/);
+  assert.match(summary, /已於 8:15 傳名單給老師/);
+
+  sheets['通知紀錄'].rows.length = 1; // 使用者清空通知紀錄
+  clock.now = new Date('2026-10-01T16:30:00+08:00').getTime();
+  assert.strictEqual(ctx.checkAbsences(), 0, '下課後不傳');
+  assert.match(ctx.todaySummary_(), /已下課，今天沒有傳名單給老師/);
+  clock.now = new Date('2026-10-01T08:00:00+08:00').getTime();
+  assert.match(ctx.todaySummary_(), /將於 08:15 傳名單給老師/);
+  clock.now = new Date('2026-10-01T15:41:00+08:00').getTime();
+  sheets['通知紀錄'].rows.push(['2026-10-01', 'A4', '410615', '通知老師', '8:15', 1, '成功（未到 1 人）']);
   assert.match(summary, /已到 1 人/);
   assert.match(summary, /請假 1 人：柯雅娟/);
   assert.match(summary, /未到 1 人：葉翊涵（尚未通知家長）/);

@@ -24,11 +24,11 @@ function removeTrigger() {
   });
 }
 
-/** 選單用：立即檢查並顯示結果。每位學生每堂課只會通知一次，所以已通知過的不會重發。 */
+/** 選單用：立即檢查並顯示結果。名單每堂課每天只傳一次給老師。 */
 function checkAbsencesNow() {
   var sent = checkAbsences();
-  SpreadsheetApp.getUi().alert('檢查完成：這次新增 ' + sent + ' 筆未到通知。\n' +
-    '（每位學生每堂課只通知一次，已通知過的不會重發）\n\n' + todaySummary_());
+  SpreadsheetApp.getUi().alert('檢查完成：這次傳了 ' + sent + ' 則未到名單給老師。\n' +
+    '（每堂課每天只傳一次；家長要由老師在看板按「通知家長」）\n\n' + todaySummary_());
 }
 
 /** 在「LINE好友」表選一列，推一則測試訊息給他，確認 token 與配對正確。 */

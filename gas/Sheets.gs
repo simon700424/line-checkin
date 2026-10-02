@@ -182,7 +182,11 @@ function getNotices_(dateStr) {
   return readTable_('notices').filter(function (r) {
     return toDateStr_(r['日期']) === dateStr;
   }).map(function (r) {
-    return { courseId: String(r['課程ID']), studentId: String(r['學號']), type: String(r['類型']) };
+    var t = r['發送時間'];
+    return {
+      courseId: String(r['課程ID']), studentId: String(r['學號']), type: String(r['類型']),
+      time: t instanceof Date ? Utilities.formatDate(t, TZ, 'HH:mm') : String(t)
+    };
   });
 }
 

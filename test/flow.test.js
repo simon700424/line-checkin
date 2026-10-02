@@ -127,20 +127,36 @@ test('完整流程：簽到失敗 → 未到通知 → 補簽 → 已到通知 �
   ctx.checkAbsences();
   assert.strictEqual(pushes.length, 0);
 
-  // 18:40 通知小明的兩位家長；請假的小美、準時的小華、離班生都不通知
+  // 18:40 先傳一則彙整名單給老師；家長還不通知。請假的小美、準時的小華、離班生不在名單內
   clock.now = T('18:40');
-  ctx.checkAbsences();
-  assert.deepStrictEqual(pushes.map((p) => p.to).sort(), ['U_dad', 'U_mom']);
-  assert.match(pushes[0].messages[0].text, /王小明.*尚未簽到/);
-  ctx.checkAbsences(); // 同一分鐘再跑一次不可重發
-  assert.strictEqual(pushes.length, 2);
+  assert.strictEqual(ctx.checkAbsences(), 1);
+  assert.deepStrictEqual(pushes.map((p) => p.to), ['U_tea']);
+  assert.match(pushes[0].messages[0].text, /未到 1 人：王小明/);
+  assert.match(pushes[0].messages[0].text, /請假 1 人：林小美/);
+  assert.strictEqual(ctx.checkAbsences(), 0, '同一堂課只傳一次給老師');
+  assert.strictEqual(pushes.length, 1);
+
+  // 看板顯示未到、尚未通知家長
+  let board = call({ action: 'me', idToken: 'tok-U_tea' }).dashboard.courses[0].students;
+  assert.strictEqual(board.find((s) => s.id === 'S001').parentNotified, '');
+
+  // 學生不能通知家長；老師確認後按「通知家長」→ 兩位家長收到
+  assert.strictEqual(call({ action: 'notifyParents', idToken: 'tok-U_stu', courseId: 'M1', studentIds: ['S001'] }).ok, false);
+  clock.now = T('18:42');
+  const np = call({ action: 'notifyParents', idToken: 'tok-U_tea', courseId: 'M1', studentIds: ['S001', 'S002', 'S003'] });
+  assert.match(np.message, /已通知 1 位/, '準時的小華、請假的小美不會被通知');
+  assert.deepStrictEqual(pushes.slice(1).map((p) => p.to).sort(), ['U_dad', 'U_mom']);
+  assert.match(pushes[1].messages[0].text, /王小明.*尚未簽到/);
+  assert.strictEqual(np.dashboard.courses[0].students.find((s) => s.id === 'S001').parentNotified, '18:42');
+  assert.match(call({ action: 'notifyParents', idToken: 'tok-U_tea', courseId: 'M1', studentIds: ['S001'] }).message, /已通知過/);
+  assert.strictEqual(pushes.length, 3);
 
   // 18:45 小明到了 → 遲到 → 家長收到「已到」
   clock.now = T('18:45');
   const res = call({ action: 'checkin', idToken: 'tok-U_stu', lat: 22.0020, lng: 120.7446, accuracy: 30 });
   assert.strictEqual(res.status, '遲到');
-  assert.strictEqual(pushes.length, 4);
-  assert.match(pushes[3].messages[0].text, /已於 18:45 抵達/);
+  assert.strictEqual(pushes.length, 5);
+  assert.match(pushes[4].messages[0].text, /已於 18:45 抵達/);
   // 不存經緯度
   const rec = sheets['簽到紀錄'].rows.at(-1);
   assert.ok(!rec.includes(22.002) && !rec.includes(120.7446));
@@ -161,7 +177,7 @@ test('停課日不通知、webhook 加好友會登記', () => {
   const clock = { now: T('18:45') };
   const { ctx, sheets, pushes, call } = makeEnv(clock);
   ctx.setupSheets();
-  sheets['LINE好友'].rows.push(['U_mom', '明媽', '家長', 'S001']);
+  sheets['LINE好友'].rows.push(['U_mom', '明媽', '家長', 'S001'], ['U_tea', '王老師', '老師', '']);
   sheets['學生'].rows.push(['S001', '王小明', 'A班', '在學']);
   sheets['課表'].rows.push(['M1', '數學', 'A班', '2', '18:30', '20:30', '教室', '22', '120', '80']);
   sheets['停課'].rows.push(['2026-09-29', '', '颱風假']);
@@ -180,15 +196,13 @@ test('立即檢查：已通知過不重發，並回傳今日摘要（重現 2026
   sheets['課表'].rows.push(['A4', '到校簽到', '觀二甲', '四', '08:05', '16:10', '教室', '21.9938173', '120.747958', '150']);
   sheets['請假'].rows.push(['2026/10/01', '410609', 'A4', '事']);
   sheets['簽到紀錄'].rows.push(['2026-10-01', 'A4', '410601', '尤沛筠', '8:17', '遲到', 73, 31]);
-  sheets['通知紀錄'].rows.push(['2026-10-01', 'A4', '410615', '未到', '8:45', 0, '無配對家長']);
+  sheets['通知紀錄'].rows.push(['2026-10-01', 'A4', '410615', '通知老師', '8:15', 1, '成功（未到 1 人）']);
 
-  assert.strictEqual(ctx.checkAbsences(), 0, '葉翊涵已通知過，不重發');
+  assert.strictEqual(ctx.checkAbsences(), 0, '今天已傳過名單給老師，不重發');
   assert.strictEqual(sheets['通知紀錄'].rows.length, 2);
   const summary = ctx.todaySummary_();
+  assert.match(summary, /已傳名單給老師/);
   assert.match(summary, /已到 1 人/);
   assert.match(summary, /請假 1 人：柯雅娟/);
-  assert.match(summary, /未到 1 人：葉翊涵（已通知）/);
-
-  sheets['學生'].rows.push(['410699', '新同學', '觀二甲', '在學']);
-  assert.strictEqual(ctx.checkAbsences(), 1, '新的未到學生才會新增');
+  assert.match(summary, /未到 1 人：葉翊涵（尚未通知家長）/);
 });

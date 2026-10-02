@@ -100,6 +100,7 @@ function handleAction_(body) {
     case 'me': return actionMe_(me, friend, settings);
     case 'checkin': return actionCheckin_(friend, settings, body);
     case 'manualCheckin': return actionManualCheckin_(friend, body);
+    case 'notifyParents': return actionNotifyParents_(friend, body);
     default: return { ok: false, message: '未知的操作' };
   }
 }
@@ -214,12 +215,26 @@ function actionManualCheckin_(friend, body) {
   return { ok: true, message: '已替 ' + student.name + ' 代簽。', dashboard: buildDashboard_() };
 }
 
+/** 老師確認後通知家長（可一次多位）。 */
+function actionNotifyParents_(friend, body) {
+  if (friend.role !== '老師') return { ok: false, message: '只有老師可以通知家長。' };
+  var ids = Array.isArray(body.studentIds) ? body.studentIds.map(String) : [];
+  if (!ids.length) return { ok: false, message: '沒有選擇學生。' };
+  var r = notifyParentsForAbsent_(String(body.courseId || ''), ids);
+  return {
+    ok: true,
+    message: '已通知 ' + r.sent + ' 位學生的家長。' + (r.skipped.length ? '\n略過：' + r.skipped.join('、') : ''),
+    dashboard: buildDashboard_()
+  };
+}
+
 /** 老師看板：今天每堂課的已到／未到／請假名單。 */
 function buildDashboard_() {
   var now = now_();
   var students = getStudents_();
   var records = getRecords_(now.dateStr);
   var leaves = getLeaves_();
+  var notices = getNotices_(now.dateStr);
   return {
     date: now.dateStr,
     time: now.hm,
@@ -227,7 +242,8 @@ function buildDashboard_() {
       var list = students.filter(function (s) { return studentInCourse(s, c); }).map(function (s) {
         var rec = records.filter(function (r) { return r.courseId === c.id && r.studentId === s.id; })[0];
         var status = rec ? rec.status : (isOnLeave(leaves, now.dateStr, s.id, c.id) ? '請假' : '未到');
-        return { id: s.id, name: s.name, status: status, time: rec ? rec.time : '' };
+        var n = notices.filter(function (x) { return x.courseId === c.id && x.studentId === s.id && x.type === '未到'; })[0];
+        return { id: s.id, name: s.name, status: status, time: rec ? rec.time : '', parentNotified: n ? String(n.time || '已通知') : '' };
       });
       return {
         id: c.id, name: c.name, place: c.place,

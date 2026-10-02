@@ -22,6 +22,9 @@
   .btn:active { background: var(--brand-dark); }
   .btn:disabled { background: #9ca3af; }
   .btn.small { display: inline-block; width: auto; padding: 6px 12px; font-size: 14px; margin: 0; }
+  .btn.warn { background: var(--warn); }
+  .btn.ghost { background: #fff; color: var(--text); border: 1px solid var(--line); }
+  .actions { display: flex; flex-wrap: wrap; gap: 6px; justify-content: flex-end; align-items: center; }
   .msg { padding: 12px; border-radius: 10px; margin-top: 12px; }
   .msg.ok { background: #e7f9ee; color: #065f46; }
   .msg.err { background: #fdecec; color: #991b1b; }
@@ -144,25 +147,43 @@
       html += '<div class="card"><h2>' + esc(c.name) + '</h2><div class="muted">' + esc(c.start) + '–' + esc(c.end) +
         (c.place ? '・' + esc(c.place) : '') + '</div><div class="summary"><span>✅ 已到 ' + count.arrived +
         '</span><span>❌ 未到 ' + count.absent + '</span><span>📝 請假 ' + count.leave + '</span></div>';
+      var pending = c.students.filter(function (s) { return s.status === '未到' && !s.parentNotified; });
       list.forEach(function (s) {
-        html += '<div class="row"><div>' + esc(s.name) + ' <span class="muted">' + esc(s.id) + '</span></div><div>' +
+        var absent = s.status === '未到';
+        html += '<div class="row"><div>' + esc(s.name) + ' <span class="muted">' + esc(s.id) + '</span>' +
+          (absent && s.parentNotified ? '<div class="muted">已通知家長 ' + esc(s.parentNotified) + '</div>' : '') +
+          '</div><div class="actions">' +
           '<span class="tag ' + esc(s.status) + '">' + esc(s.status) + (s.time ? ' ' + esc(s.time) : '') + '</span>' +
-          (s.status === '未到' ? ' <button class="btn small" data-course="' + esc(c.id) + '" data-student="' + esc(s.id) +
-          '" data-name="' + esc(s.name) + '">代簽</button>' : '') + '</div></div>';
+          (absent ? ' <button class="btn small ghost" data-act="checkin" data-course="' + esc(c.id) + '" data-student="' + esc(s.id) +
+          '" data-name="' + esc(s.name) + '">代簽</button>' : '') +
+          (absent && !s.parentNotified ? ' <button class="btn small warn" data-act="notify" data-course="' + esc(c.id) +
+          '" data-student="' + esc(s.id) + '" data-name="' + esc(s.name) + '">通知家長</button>' : '') +
+          '</div></div>';
       });
+      if (pending.length > 1) {
+        html += '<button class="btn warn" data-act="notifyAll" data-course="' + esc(c.id) + '" data-students="' +
+          esc(pending.map(function (s) { return s.id; }).join(',')) + '" data-names="' +
+          esc(pending.map(function (s) { return s.name; }).join('、')) + '">📣 通知全部未到學生的家長（' + pending.length + ' 位）</button>';
+      }
       html += '</div>';
     });
     html += '<div id="result"></div>';
     app.innerHTML = html;
     document.getElementById('refresh').onclick = load;
-    Array.prototype.forEach.call(app.querySelectorAll('[data-student]'), function (b) {
+    function run(b, action, data, question) {
+      if (!confirm(question)) return;
+      b.disabled = true;
+      api(action, data).then(function (res) {
+        if (res.dashboard) renderTeacher(res.dashboard);
+        alert(res.message);
+      }).catch(function () { b.disabled = false; alert('網路錯誤，請再試一次。'); });
+    }
+    Array.prototype.forEach.call(app.querySelectorAll('[data-act]'), function (b) {
+      var d = b.dataset;
       b.onclick = function () {
-        if (!confirm('確定替 ' + b.dataset.name + ' 代簽？')) return;
-        b.disabled = true;
-        api('manualCheckin', { courseId: b.dataset.course, studentId: b.dataset.student }).then(function (res) {
-          if (res.dashboard) renderTeacher(res.dashboard);
-          alert(res.message);
-        });
+        if (d.act === 'checkin') run(b, 'manualCheckin', { courseId: d.course, studentId: d.student }, '確定替 ' + d.name + ' 代簽？');
+        if (d.act === 'notify') run(b, 'notifyParents', { courseId: d.course, studentIds: [d.student] }, '確定私訊 ' + d.name + ' 的家長「尚未簽到」？');
+        if (d.act === 'notifyAll') run(b, 'notifyParents', { courseId: d.course, studentIds: d.students.split(',') }, '確定通知以下學生的家長？\n' + d.names);
       };
     });
   }

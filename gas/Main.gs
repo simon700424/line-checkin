@@ -54,6 +54,14 @@ function handleWebhook_(body) {
       return;
     }
 
+    // 學生點「聯絡學生」訊息裡的快速回覆按鈕
+    if (ev.type === 'postback' && /^contact\|/.test(ev.postback.data)) {
+      var p = ev.postback.data.split('|');
+      var answer = handleStudentContactReply_(userId, p[1], p[2], CONTACT_REPLIES[p[3]] || p[3]);
+      if (answer) reply_(ev.replyToken, answer);
+      return;
+    }
+
     if (ev.type === 'message' && ev.message.type === 'text') {
       var text = ev.message.text.trim();
       if (/^(簽到|點名|打卡)$/.test(text) || /^(老師|出缺席)$/.test(text)) {
@@ -61,7 +69,11 @@ function handleWebhook_(body) {
         reply_(ev.replyToken, settings.liffUrl
           ? '請點這個連結：\n' + settings.liffUrl
           : '老師還沒設定簽到連結，請通知老師。');
+        return;
       }
+      // 今天被老師聯絡過的學生直接打字回覆，也算回覆
+      var free = handleStudentContactReply_(userId, '', '', text.slice(0, 200));
+      if (free) reply_(ev.replyToken, free);
     }
   });
 }
@@ -101,6 +113,13 @@ function handleAction_(body) {
     case 'checkin': return actionCheckin_(friend, settings, body);
     case 'manualCheckin': return actionManualCheckin_(friend, body);
     case 'notifyParents': return actionNotifyParents_(friend, body);
+    case 'contactStudent': return actionContact_(friend, body, function () {
+      return contactStudent_(friend.name, String(body.courseId || ''), String(body.studentId || ''));
+    });
+    case 'logContact': return actionContact_(friend, body, function () {
+      return logContact_(friend.name, String(body.courseId || ''), String(body.studentId || ''),
+        String(body.result || ''), String(body.note || '').slice(0, 100));
+    });
     default: return { ok: false, message: '未知的操作' };
   }
 }
@@ -215,6 +234,14 @@ function actionManualCheckin_(friend, body) {
   return { ok: true, message: '已替 ' + student.name + ' 代簽。', dashboard: buildDashboard_() };
 }
 
+/** 聯絡學生相關動作：限老師，完成後回傳最新看板。 */
+function actionContact_(friend, body, fn) {
+  if (friend.role !== '老師') return { ok: false, message: '只有老師可以聯絡學生。' };
+  var r = fn();
+  r.dashboard = buildDashboard_();
+  return r;
+}
+
 /** 老師確認後通知家長（可一次多位）。 */
 function actionNotifyParents_(friend, body) {
   if (friend.role !== '老師') return { ok: false, message: '只有老師可以通知家長。' };
@@ -235,15 +262,21 @@ function buildDashboard_() {
   var records = getRecords_(now.dateStr);
   var leaves = getLeaves_();
   var notices = getNotices_(now.dateStr);
+  var contacts = contactStatusMap_(now.dateStr);
   return {
     date: now.dateStr,
+    contactResults: CONTACT_RESULTS,
     time: now.hm,
     courses: todaysCourses_(now).map(function (c) {
       var list = students.filter(function (s) { return studentInCourse(s, c); }).map(function (s) {
         var rec = records.filter(function (r) { return r.courseId === c.id && r.studentId === s.id; })[0];
         var status = rec ? rec.status : (isOnLeave(leaves, now.dateStr, s.id, c.id) ? '請假' : '未到');
         var n = notices.filter(function (x) { return x.courseId === c.id && x.studentId === s.id && x.type === '未到'; })[0];
-        return { id: s.id, name: s.name, status: status, time: rec ? rec.time : '', parentNotified: n ? String(n.time || '已通知') : '' };
+        return {
+          id: s.id, name: s.name, status: status, time: rec ? rec.time : '',
+          parentNotified: n ? String(n.time || '已通知') : '',
+          contact: contacts[c.id + '|' + s.id] || null
+        };
       });
       return {
         id: c.id, name: c.name, place: c.place,

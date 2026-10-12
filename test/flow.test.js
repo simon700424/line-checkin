@@ -33,6 +33,7 @@ function makeEnv(clock) {
     toast() {}
   };
   const pushes = [];
+  const replies = [];
   const fmt = (d, tz, pattern) => {
     const p = Object.fromEntries(new Intl.DateTimeFormat('en-GB', {
       timeZone: tz, year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit', hourCycle: 'h23', weekday: 'short'
@@ -72,17 +73,21 @@ function makeEnv(clock) {
           pushes.push(JSON.parse(opt.payload));
           return { getResponseCode: () => 200, getContentText: () => '{}' };
         }
+        if (url.includes('/message/reply')) {
+          replies.push(JSON.parse(opt.payload).messages[0].text);
+          return { getResponseCode: () => 200, getContentText: () => '{}' };
+        }
         if (url.includes('/profile/')) return { getResponseCode: () => 200, getContentText: () => '{"displayName":"新朋友"}' };
         return { getResponseCode: () => 200, getContentText: () => '{}' };
       }
     }
   };
   vm.createContext(ctx);
-  for (const f of ['Logic', 'Sheets', 'Line', 'Main', 'Notify']) {
+  for (const f of ['Logic', 'Sheets', 'Line', 'Main', 'Notify', 'Contact']) {
     vm.runInContext(fs.readFileSync(path.join(__dirname, `../gas/${f}.gs`), 'utf8'), ctx);
   }
   const call = (body) => JSON.parse(ctx.doPost({ postData: { contents: JSON.stringify(body) } }).text);
-  return { ctx, sheets, pushes, call };
+  return { ctx, sheets, pushes, replies, call };
 }
 
 const T = (hm) => new Date(`2026-09-29T${hm}:00+08:00`).getTime(); // 2026-09-29 是星期二
@@ -214,4 +219,71 @@ test('立即檢查：已通知過不重發，並回傳今日摘要（重現 2026
   assert.match(summary, /已到 1 人/);
   assert.match(summary, /請假 1 人：柯雅娟/);
   assert.match(summary, /未到 1 人：葉翊涵（尚未通知家長）/);
+});
+
+test('聯絡未到學生：老師傳訊息 → 學生點按鈕回覆 → 通知老師 → 老師登記結果', () => {
+  const clock = { now: T('18:45') };
+  const { ctx, sheets, pushes, replies, call } = makeEnv(clock);
+  ctx.setupSheets();
+  ctx.SpreadsheetApp.getActive().getSheetByName('設定').rows.find((r) => r[0] === 'LINE Login Channel ID')[1] = '1234';
+  sheets['設定'].rows.find((r) => r[0] === 'LIFF網址')[1] = 'https://liff.line.me/x';
+  sheets['LINE好友'].rows.push(['U_stu', '小明', '學生', 'S001'], ['U_tea', '王老師', '老師', ''], ['U_other', '小華', '學生', 'S002']);
+  sheets['學生'].rows.push(['S001', '王小明', 'A班', '在學'], ['S002', '陳小華', 'A班', '在學'], ['S003', '沒LINE', 'A班', '在學']);
+  sheets['課表'].rows.push(['M1', '數學', 'A班', '二', '18:30', '20:30', '教室', '22.0019', '120.7445', '80']);
+  const webhook = (userId, ev) => call({ destination: 'x', events: [Object.assign({ replyToken: 'r', source: { type: 'user', userId } }, ev)] });
+
+  // 學生不能聯絡別人；沒綁 LINE 的學生會提示
+  assert.strictEqual(call({ action: 'contactStudent', idToken: 'tok-U_stu', courseId: 'M1', studentId: 'S002' }).ok, false);
+  assert.match(call({ action: 'contactStudent', idToken: 'tok-U_tea', courseId: 'M1', studentId: 'S003' }).message, /還沒有綁定 LINE/);
+
+  // 還沒被聯絡時，學生隨便聊天不會轉給老師
+  webhook('U_stu', { type: 'message', message: { type: 'text', text: '哈囉' } });
+  assert.strictEqual(pushes.length, 0);
+
+  // 老師傳訊息 → 學生收到帶快速回覆的訊息
+  const r1 = call({ action: 'contactStudent', idToken: 'tok-U_tea', courseId: 'M1', studentId: 'S001' });
+  assert.ok(r1.ok);
+  assert.strictEqual(pushes[0].to, 'U_stu');
+  const msg = pushes[0].messages[0];
+  assert.match(msg.text, /王小明 同學，王老師 在找你/);
+  assert.deepStrictEqual(msg.quickReply.items.map((i) => i.action.type), ['postback', 'postback', 'postback', 'uri']);
+  assert.strictEqual(r1.dashboard.courses[0].students.find((s) => s.id === 'S001').contact.asked, '18:45');
+
+  // 別的學生偽造同一個按鈕：沒被聯絡過，不接受
+  webhook('U_other', { type: 'postback', postback: { data: 'contact|M1|2026-09-29|road' } });
+  assert.strictEqual(pushes.length, 1);
+
+  // 本人點「在路上」→ 回覆學生、通知老師、看板顯示
+  clock.now = T('18:47');
+  webhook('U_stu', { type: 'postback', postback: { data: 'contact|M1|2026-09-29|road' } });
+  assert.match(replies.at(-1), /已經轉告老師/);
+  assert.strictEqual(pushes[1].to, 'U_tea');
+  assert.match(pushes[1].messages[0].text, /王小明 回覆：🚌 在路上（18:47）/);
+  let st = call({ action: 'me', idToken: 'tok-U_tea' }).dashboard.courses[0].students.find((s) => s.id === 'S001');
+  assert.strictEqual(st.contact.reply, '🚌 在路上 18:47');
+
+  // 已回覆後再打字，不會再轉給老師
+  webhook('U_stu', { type: 'message', message: { type: 'text', text: '快到了' } });
+  assert.strictEqual(pushes.length, 2);
+
+  // 過期的按鈕
+  webhook('U_stu', { type: 'postback', postback: { data: 'contact|M1|2026-09-28|road' } });
+  assert.match(replies.at(-1), /過期/);
+
+  // 老師登記結果；不在選項內的結果不接受
+  assert.strictEqual(call({ action: 'logContact', idToken: 'tok-U_tea', courseId: 'M1', studentId: 'S001', result: '亂寫' }).ok, false);
+  const r2 = call({ action: 'logContact', idToken: 'tok-U_tea', courseId: 'M1', studentId: 'S001', result: '在路上' });
+  assert.ok(r2.ok);
+  assert.strictEqual(r2.dashboard.courses[0].students.find((s) => s.id === 'S001').contact.result, '在路上 18:47');
+  assert.deepStrictEqual(sheets['聯絡紀錄'].rows.slice(1).map((r) => r[4]), ['傳訊息', '學生回覆', '老師登記']);
+
+  // 學生打字回覆（先被聯絡、尚未回覆）
+  call({ action: 'contactStudent', idToken: 'tok-U_tea', courseId: 'M1', studentId: 'S002' });
+  webhook('U_other', { type: 'message', message: { type: 'text', text: '我睡過頭了' } });
+  assert.match(pushes.at(-1).messages[0].text, /陳小華 回覆：我睡過頭了/);
+
+  // 已簽到的學生不能再傳訊息
+  clock.now = T('18:50');
+  call({ action: 'checkin', idToken: 'tok-U_stu', lat: 22.0019, lng: 120.7445, accuracy: 10 });
+  assert.match(call({ action: 'contactStudent', idToken: 'tok-U_tea', courseId: 'M1', studentId: 'S001' }).message, /已經簽到/);
 });

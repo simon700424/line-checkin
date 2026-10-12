@@ -25,6 +25,8 @@
   .btn.warn { background: var(--warn); }
   .btn.ghost { background: #fff; color: var(--text); border: 1px solid var(--line); }
   .actions { display: flex; flex-wrap: wrap; gap: 6px; justify-content: flex-end; align-items: center; }
+  .actions.left { justify-content: flex-start; margin-top: 6px; }
+  select.result { font-size: 14px; padding: 6px 8px; border-radius: 12px; border: 1px solid var(--line); background: #fff; max-width: 160px; }
   .msg { padding: 12px; border-radius: 10px; margin-top: 12px; }
   .msg.ok { background: #e7f9ee; color: #065f46; }
   .msg.err { background: #fdecec; color: #991b1b; }
@@ -150,8 +152,21 @@
       var pending = c.students.filter(function (s) { return s.status === '未到' && !s.parentNotified; });
       list.forEach(function (s) {
         var absent = s.status === '未到';
+        var ct = s.contact || {};
+        var info = [];
+        if (absent && ct.asked) info.push('💬 已傳訊息 ' + ct.asked);
+        if (ct.reply) info.push('🗨️ 學生回覆：' + ct.reply);
+        if (ct.result) info.push('📝 ' + ct.result);
+        if (absent && s.parentNotified) info.push('👪 已通知家長 ' + s.parentNotified);
         html += '<div class="row"><div>' + esc(s.name) + ' <span class="muted">' + esc(s.id) + '</span>' +
-          (absent && s.parentNotified ? '<div class="muted">已通知家長 ' + esc(s.parentNotified) + '</div>' : '') +
+          info.map(function (t) { return '<div class="muted">' + esc(t) + '</div>'; }).join('') +
+          (absent ? '<div class="actions left">' +
+            '<button class="btn small ghost" data-act="contact" data-course="' + esc(c.id) + '" data-student="' + esc(s.id) +
+            '" data-name="' + esc(s.name) + '">💬 ' + (ct.asked ? '再傳一次' : '傳訊息') + '</button>' +
+            '<select class="result" data-course="' + esc(c.id) + '" data-student="' + esc(s.id) + '" data-name="' + esc(s.name) + '">' +
+            '<option value="">📝 聯絡結果…</option>' +
+            (d.contactResults || []).map(function (r) { return '<option>' + esc(r) + '</option>'; }).join('') +
+            '</select></div>' : '') +
           '</div><div class="actions">' +
           '<span class="tag ' + esc(s.status) + '">' + esc(s.status) + (s.time ? ' ' + esc(s.time) : '') + '</span>' +
           (absent ? ' <button class="btn small ghost" data-act="checkin" data-course="' + esc(c.id) + '" data-student="' + esc(s.id) +
@@ -178,11 +193,25 @@
         alert(res.message);
       }).catch(function () { b.disabled = false; alert('網路錯誤，請再試一次。'); });
     }
+    Array.prototype.forEach.call(app.querySelectorAll('select.result'), function (sel) {
+      sel.onchange = function () {
+        var d = sel.dataset, result = sel.value;
+        if (!result) return;
+        var note = result === '其他' ? (prompt('請輸入說明（可留空）') || '') : '';
+        if (!confirm('記錄 ' + d.name + '：' + result + (note ? '（' + note + '）' : '') + '？')) { sel.value = ''; return; }
+        sel.disabled = true;
+        api('logContact', { courseId: d.course, studentId: d.student, result: result, note: note }).then(function (res) {
+          if (res.dashboard) renderTeacher(res.dashboard);
+          if (!res.ok) alert(res.message);
+        }).catch(function () { sel.disabled = false; alert('網路錯誤，請再試一次。'); });
+      };
+    });
     Array.prototype.forEach.call(app.querySelectorAll('[data-act]'), function (b) {
       var d = b.dataset;
       b.onclick = function () {
         if (d.act === 'checkin') run(b, 'manualCheckin', { courseId: d.course, studentId: d.student }, '確定替 ' + d.name + ' 代簽？');
         if (d.act === 'notify') run(b, 'notifyParents', { courseId: d.course, studentIds: [d.student] }, '確定私訊 ' + d.name + ' 的家長「尚未簽到」？');
+        if (d.act === 'contact') run(b, 'contactStudent', { courseId: d.course, studentId: d.student }, '用官方帳號私訊 ' + d.name + '，問他現在在哪裡？');
         if (d.act === 'notifyAll') run(b, 'notifyParents', { courseId: d.course, studentIds: d.students.split(',') }, '確定通知以下學生的家長？\n' + d.names);
       };
     });

@@ -13,7 +13,8 @@ var SHEETS = {
   leaves: { name: '請假', headers: ['日期', '學號', '課程ID', '原因'] },
   cancels: { name: '停課', headers: ['日期', '課程ID', '原因'] },
   records: { name: '簽到紀錄', headers: ['日期', '課程ID', '學號', '姓名', '簽到時間', '狀態', '距離公尺', '定位精度公尺'] },
-  notices: { name: '通知紀錄', headers: ['日期', '課程ID', '學號', '類型', '發送時間', '家長數', '結果'] }
+  notices: { name: '通知紀錄', headers: ['日期', '課程ID', '學號', '類型', '發送時間', '家長數', '結果'] },
+  contacts: { name: '聯絡紀錄', headers: ['日期', '課程ID', '學號', '姓名', '方式', '內容', '時間', '記錄者'] }
 };
 
 var DEFAULT_SETTINGS = [
@@ -28,7 +29,14 @@ var DEFAULT_SETTINGS = [
 
 function sheet_(key) {
   var def = SHEETS[key];
-  var sh = SpreadsheetApp.getActive().getSheetByName(def.name);
+  var ss = SpreadsheetApp.getActive();
+  var sh = ss.getSheetByName(def.name);
+  if (!sh && key === 'contacts') {
+    // 新版才加的工作表：不用重跑初始化，第一次用到時自動建立
+    sh = ss.insertSheet(def.name);
+    sh.getRange(1, 1, 1, def.headers.length).setValues([def.headers]).setFontWeight('bold');
+    sh.setFrozenRows(1);
+  }
   if (!sh) throw new Error('找不到工作表「' + def.name + '」，請先執行選單「簽到系統 → 初始化試算表」。');
   return sh;
 }

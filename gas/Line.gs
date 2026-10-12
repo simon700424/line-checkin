@@ -29,7 +29,12 @@ function reply_(replyToken, text) {
 
 /** 主動推播（計入每月則數）。 */
 function push_(userId, text) {
-  return lineApi_('message/push', { to: userId, messages: [{ type: 'text', text: text }] });
+  return pushMessages_(userId, [{ type: 'text', text: text }]);
+}
+
+/** 主動推播任意訊息物件（例如帶快速回覆按鈕）。 */
+function pushMessages_(userId, messages) {
+  return lineApi_('message/push', { to: userId, messages: messages });
 }
 
 function getProfile_(userId) {

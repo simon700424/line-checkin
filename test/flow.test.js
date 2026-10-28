@@ -136,6 +136,7 @@ test('完整流程：簽到失敗 → 未到通知 → 補簽 → 已到通知 �
   clock.now = T('18:40');
   assert.strictEqual(ctx.checkAbsences(), 1);
   assert.deepStrictEqual(pushes.map((p) => p.to), ['U_tea']);
+  assert.doesNotMatch(String(sheets['通知紀錄'].rows.at(-1)[2]), /,/, '學號不可用逗號分隔（會被試算表當成數字）');
   assert.match(pushes[0].messages[0].text, /未到 1 人：王小明/);
   assert.match(pushes[0].messages[0].text, /請假 1 人：林小美/);
   assert.strictEqual(ctx.checkAbsences(), 0, '同一堂課只傳一次給老師');

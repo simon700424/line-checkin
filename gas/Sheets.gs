@@ -64,6 +64,7 @@ function setupSheets() {
   sheet_('friends').getRange('A:D').setNumberFormat('@');
   sheet_('leaves').getRange('A:C').setNumberFormat('@');
   sheet_('cancels').getRange('A:B').setNumberFormat('@');
+  sheet_('notices').getRange('C:C').setNumberFormat('@');
 
   var roleRule = SpreadsheetApp.newDataValidation()
     .requireValueInList(['學生', '家長', '老師'], true).setAllowInvalid(false).build();

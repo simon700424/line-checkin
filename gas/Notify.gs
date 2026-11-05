@@ -79,7 +79,7 @@ function checkAbsences() {
       teachers.forEach(function (t) { if (push_(t.userId, text)) ok++; });
       sent++;
       appendRow_('notices', {
-        '日期': now.dateStr, '課程ID': c.id, '學號': absent.map(function (s) { return s.id; }).join(','),
+        '日期': now.dateStr, '課程ID': c.id, '學號': absent.map(function (s) { return s.id; }).join('、'), // 用頓號：逗號會被試算表當成千分位數字
         '類型': '通知老師', '發送時間': now.hm, '家長數': teachers.length,
         '結果': teachers.length === 0 ? '無老師帳號' : (ok === teachers.length ? '成功（未到 ' + absent.length + ' 人）' : '部分失敗 ' + ok + '/' + teachers.length)
       });

@@ -38,10 +38,60 @@ function absentStudents_(course, now, students, records, leaves) {
 }
 
 /**
- * 時間觸發器每分鐘執行：到了通知時間，傳彙整名單給老師（每堂課每天一次）。
- * 回傳這次傳出的彙整則數。
+ * 時間觸發器每分鐘執行的入口（觸發條件的函式名稱維持 checkAbsences，不用重設）。
+ *  - 不在今天任何一堂課的「通知時間～下課」之間 → 不開試算表，直接結束（半夜、假日幾乎不花資源）
+ *  - Google 偶發的暫時性錯誤（server error、逾時）→ 寫進執行記錄後結束，不丟出錯誤，
+ *    下一分鐘自然會再試；因為還沒傳的名單不會被記成已傳，所以不會漏
+ *  - 其他錯誤（真的 bug）照常丟出，Google 會寄信通知
  */
 function checkAbsences() {
+  try {
+    if (!inAbsenceWindow_()) return 0;
+    return runAbsenceCheck_();
+  } catch (err) {
+    if (isTransientError_(err)) {
+      console.warn('暫時性錯誤，下一分鐘再試：' + err);
+      return 0;
+    }
+    throw err;
+  }
+}
+
+/** Google 服務暫時故障的錯誤訊息（中英文介面都有可能）。 */
+function isTransientError_(err) {
+  return /server error|try again|timed out|timeout|temporarily|service unavailable|Service (Spreadsheets|invoked too many times)|Address unavailable|伺服器|請稍後|暫時|逾時/i
+    .test(String(err && err.message || err));
+}
+
+/**
+ * 現在是否落在今天某堂課的「通知時間～下課」之間。
+ * 結果放快取 15 分鐘：一晚只需讀幾次試算表，而不是每分鐘讀。
+ * 快取只用來決定「要不要去看」，真正傳名單前仍會重讀課表，所以停課照樣生效；
+ * 當天臨時新增的課，最多晚 15 分鐘才會被看到。
+ */
+function inAbsenceWindow_() {
+  var now = now_();
+  var cache = CacheService.getScriptCache();
+  var key = 'absenceWindow:' + now.dateStr;
+  var win = null;
+  try { win = JSON.parse(cache.get(key) || 'null'); } catch (e) { win = null; }
+  if (!win) {
+    var delayMin = getSettings_().delayMin;
+    var courses = todaysCourses_(now);
+    win = courses.length
+      ? { from: Math.min.apply(null, courses.map(function (c) { return c.startMin + delayMin; })),
+          to: Math.max.apply(null, courses.map(function (c) { return c.endMin; })) }
+      : { from: -1, to: -1 };
+    cache.put(key, JSON.stringify(win), 900);
+  }
+  return now.minutes >= win.from && now.minutes <= win.to;
+}
+
+/**
+ * 實際檢查：到了通知時間，傳彙整名單給老師（每堂課每天一次）。
+ * 回傳這次傳出的彙整則數。
+ */
+function runAbsenceCheck_() {
   var now = now_();
   var settings = getSettings_();
   var due = todaysCourses_(now).filter(function (c) {

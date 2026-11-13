@@ -26,7 +26,7 @@ function removeTrigger() {
 
 /** 選單用：立即檢查並顯示結果。名單每堂課每天只傳一次給老師。 */
 function checkAbsencesNow() {
-  var sent = checkAbsences();
+  var sent = runAbsenceCheck_(); // 手動按的，出錯要讓老師看到，所以不經過觸發器的保護
   SpreadsheetApp.getUi().alert('檢查完成：這次傳了 ' + sent + ' 則未到名單給老師。\n' +
     '（每堂課每天只傳一次；家長要由老師在看板按「通知家長」）\n\n' + todaySummary_());
 }

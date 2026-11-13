@@ -28,11 +28,13 @@ function makeEnv(clock) {
     };
   }
   const ss = {
-    getSheetByName: (n) => sheets[n] || null,
+    getSheetByName: (n) => { stats.reads++; return sheets[n] || null; },
     insertSheet: (n) => (sheets[n] = makeSheet(n)),
     toast() {}
   };
   const pushes = [];
+  const cacheStore = {};
+  const stats = { reads: 0 };
   const replies = [];
   const fmt = (d, tz, pattern) => {
     const p = Object.fromEntries(new Intl.DateTimeFormat('en-GB', {
@@ -58,6 +60,11 @@ function makeEnv(clock) {
     },
     Utilities: { formatDate: fmt },
     LockService: { getScriptLock: () => ({ waitLock() {}, tryLock: () => true, releaseLock() {} }) },
+    CacheService: { getScriptCache: () => ({
+      get: (k) => (k in cacheStore ? cacheStore[k] : null),
+      put: (k, v) => { cacheStore[k] = String(v); },
+      remove: (k) => { delete cacheStore[k]; }
+    }) },
     PropertiesService: { getScriptProperties: () => ({ getProperty: (k) => ({ LINE_CHANNEL_ACCESS_TOKEN: 'tok' })[k] || null }) },
     ContentService: {
       MimeType: { JSON: 'json' },
@@ -87,7 +94,7 @@ function makeEnv(clock) {
     vm.runInContext(fs.readFileSync(path.join(__dirname, `../gas/${f}.gs`), 'utf8'), ctx);
   }
   const call = (body) => JSON.parse(ctx.doPost({ postData: { contents: JSON.stringify(body) } }).text);
-  return { ctx, sheets, pushes, replies, call };
+  return { ctx, sheets, pushes, replies, call, stats, cacheStore };
 }
 
 const T = (hm) => new Date(`2026-09-29T${hm}:00+08:00`).getTime(); // 2026-09-29 是星期二
@@ -287,4 +294,45 @@ test('聯絡未到學生：老師傳訊息 → 學生點按鈕回覆 → 通知�
   clock.now = T('18:50');
   call({ action: 'checkin', idToken: 'tok-U_stu', lat: 22.0019, lng: 120.7445, accuracy: 10 });
   assert.match(call({ action: 'contactStudent', idToken: 'tok-U_tea', courseId: 'M1', studentId: 'S001' }).message, /已經簽到/);
+});
+
+test('自動檢查：課外時間不開試算表、暫時性錯誤不報錯、真的錯誤照常報錯', () => {
+  const clock = { now: new Date('2026-11-13T02:36:00+08:00').getTime() }; // 星期五半夜
+  const { ctx, sheets, pushes, stats, cacheStore } = makeEnv(clock);
+  ctx.setupSheets();
+  sheets['LINE好友'].rows.push(['U_tea', '王老師', '老師', '']);
+  sheets['學生'].rows.push(['S001', '王小明', '觀二甲', '在學']);
+  sheets['課表'].rows.push(['A5', '到校簽到', '觀二甲', '五', '08:05', '16:10', '教室', '22', '120', '150']);
+
+  // 半夜：第一次算出今天的時段並放進快取，之後每分鐘都不再讀試算表
+  assert.strictEqual(ctx.checkAbsences(), 0);
+  const before = stats.reads;
+  for (let i = 0; i < 30; i++) assert.strictEqual(ctx.checkAbsences(), 0);
+  assert.strictEqual(stats.reads, before, '半夜不應讀試算表');
+
+  // 08:15 進入通知時段 → 傳名單給老師
+  clock.now = new Date('2026-11-13T08:15:00+08:00').getTime();
+  assert.strictEqual(ctx.checkAbsences(), 1);
+  assert.deepStrictEqual(pushes.map((p) => p.to), ['U_tea']);
+
+  // 放學後不傳
+  clock.now = new Date('2026-11-13T16:30:00+08:00').getTime();
+  assert.strictEqual(ctx.checkAbsences(), 0);
+
+  // Google 暫時故障 → 不丟出錯誤（不寄失敗信），名單也不會被記成已傳
+  Object.keys(cacheStore).forEach((k) => delete cacheStore[k]);
+  clock.now = new Date('2026-11-14T08:15:00+08:00').getTime(); // 星期六，沒課
+  assert.strictEqual(ctx.checkAbsences(), 0);
+  const realGet = ctx.SpreadsheetApp.getActive;
+  ctx.SpreadsheetApp.getActive = () => { throw new Error("We're sorry, a server error occurred. Please wait a bit and try again."); };
+  Object.keys(cacheStore).forEach((k) => delete cacheStore[k]);
+  assert.strictEqual(ctx.checkAbsences(), 0);
+  // 真的 bug 照常丟出
+  ctx.SpreadsheetApp.getActive = () => { throw new TypeError('Cannot read properties of undefined'); };
+  assert.throws(() => ctx.checkAbsences(), /Cannot read properties/);
+  ctx.SpreadsheetApp.getActive = realGet;
+
+  assert.ok(ctx.isTransientError_(new Error('Exception: Service Spreadsheets timed out while accessing document')));
+  assert.ok(ctx.isTransientError_(new Error('伺服器發生錯誤，請稍後再試。')));
+  assert.ok(!ctx.isTransientError_(new Error('找不到工作表「課表」')));
 });

@@ -21,7 +21,8 @@ function makeEnv(clock) {
         const api = {
           setValues(vals) { vals.forEach((v, i) => { rows[a - 1 + i] = v.slice(); }); return api; },
           getValues: () => rows.slice(a - 1, a - 1 + c).map((r) => r.slice(b - 1, b - 1 + d)),
-          setFontWeight: () => api, setNumberFormat: () => api, setDataValidation: () => api
+          setFontWeight: () => api, setNumberFormat: () => api, setDataValidation: () => api,
+          setValue(v) { (rows[a - 1] = rows[a - 1] || [])[b - 1] = v; return api; }
         };
         return api;
       }
@@ -33,6 +34,9 @@ function makeEnv(clock) {
     toast() {}
   };
   const pushes = [];
+  const props = { LINE_CHANNEL_ACCESS_TOKEN: 'tok' };
+  const triggers = [];
+  const apiCalls = [];
   const cacheStore = {};
   const stats = { reads: 0 };
   const replies = [];
@@ -65,7 +69,15 @@ function makeEnv(clock) {
       put: (k, v) => { cacheStore[k] = String(v); },
       remove: (k) => { delete cacheStore[k]; }
     }) },
-    PropertiesService: { getScriptProperties: () => ({ getProperty: (k) => ({ LINE_CHANNEL_ACCESS_TOKEN: 'tok' })[k] || null }) },
+    PropertiesService: { getScriptProperties: () => ({
+      getProperty: (k) => (k in props ? props[k] : null),
+      setProperty: (k, v) => { props[k] = String(v); }
+    }) },
+    ScriptApp: {
+      getProjectTriggers: () => triggers.slice(),
+      deleteTrigger: (t) => { triggers.splice(triggers.indexOf(t), 1); },
+      newTrigger: (fn) => { const b = { timeBased: () => b, everyMinutes: () => b, create: () => { triggers.push({ getHandlerFunction: () => fn }); } }; return b; }
+    },
     ContentService: {
       MimeType: { JSON: 'json' },
       createTextOutput: (s) => ({ text: s, setMimeType() { return this; } })
@@ -84,17 +96,25 @@ function makeEnv(clock) {
           replies.push(JSON.parse(opt.payload).messages[0].text);
           return { getResponseCode: () => 200, getContentText: () => '{}' };
         }
+        if (url.includes('/v2/bot/info')) {
+          const ok = opt.headers.Authorization === 'Bearer good-token';
+          return { getResponseCode: () => (ok ? 200 : 401), getContentText: () => JSON.stringify({ userId: 'Ubot', displayName: '觀光二甲' }) };
+        }
+        if (url.includes('/webhook/endpoint')) {
+          apiCalls.push({ url, method: opt.method, body: JSON.parse(opt.payload) });
+          return { getResponseCode: () => 200, getContentText: () => '{}' };
+        }
         if (url.includes('/profile/')) return { getResponseCode: () => 200, getContentText: () => '{"displayName":"新朋友"}' };
         return { getResponseCode: () => 200, getContentText: () => '{}' };
       }
     }
   };
   vm.createContext(ctx);
-  for (const f of ['Logic', 'Sheets', 'Line', 'Main', 'Notify', 'Contact']) {
+  for (const f of ['Logic', 'Sheets', 'Line', 'Main', 'Notify', 'Contact', 'Setup', 'Wizard']) {
     vm.runInContext(fs.readFileSync(path.join(__dirname, `../gas/${f}.gs`), 'utf8'), ctx);
   }
   const call = (body) => JSON.parse(ctx.doPost({ postData: { contents: JSON.stringify(body) } }).text);
-  return { ctx, sheets, pushes, replies, call, stats, cacheStore };
+  return { ctx, sheets, pushes, replies, call, stats, cacheStore, props, triggers, apiCalls };
 }
 
 const T = (hm) => new Date(`2026-09-29T${hm}:00+08:00`).getTime(); // 2026-09-29 是星期二
@@ -335,4 +355,38 @@ test('自動檢查：課外時間不開試算表、暫時性錯誤不報錯、�
   assert.ok(ctx.isTransientError_(new Error('Exception: Service Spreadsheets timed out while accessing document')));
   assert.ok(ctx.isTransientError_(new Error('伺服器發生錯誤，請稍後再試。')));
   assert.ok(!ctx.isTransientError_(new Error('找不到工作表「課表」')));
+});
+
+test('一鍵設定：貼上 token、/exec、Channel ID、LIFF 網址後自動完成，共用網頁拿得到 LIFF ID', () => {
+  const clock = { now: T('18:00') };
+  const { ctx, sheets, props, triggers, apiCalls } = makeEnv(clock);
+  delete props.LINE_CHANNEL_ACCESS_TOKEN; // 全新安裝
+  const exec = 'https://script.google.com/macros/s/AKfyc_new-School123/exec';
+  const setting = (k) => (sheets['設定'].rows.find((r) => r[0] === k) || [])[1];
+
+  // 填錯的值：不寫入，回報錯誤；沒有 token 時不啟用觸發器
+  let r = ctx.applySetupInputs_({ token: 'bad', execUrl: 'https://example.com/x', loginChannelId: '123', liffUrl: 'abc' });
+  assert.strictEqual(r.errors.length, 4);
+  assert.strictEqual(props.LINE_CHANNEL_ACCESS_TOKEN, undefined);
+  assert.strictEqual(triggers.length, 0);
+
+  r = ctx.applySetupInputs_({ token: 'good-token', execUrl: exec, loginChannelId: '2011787638', liffUrl: '' });
+  assert.deepStrictEqual(Array.from(r.errors), []);
+  assert.strictEqual(props.LINE_CHANNEL_ACCESS_TOKEN, 'good-token');
+  assert.strictEqual(props.LINE_BOT_USER_ID, 'Ubot');
+  assert.strictEqual(setting('LINE Login Channel ID'), '2011787638');
+  assert.strictEqual(setting('網頁應用程式網址'), exec);
+  assert.strictEqual(setting('LIFF Endpoint URL'), 'https://simon700424.github.io/line-checkin/?api=' + encodeURIComponent(exec));
+  assert.deepStrictEqual(apiCalls.map((c) => [c.method, c.body.endpoint]), [['put', exec]]);
+  assert.strictEqual(triggers.filter((t) => t.getHandlerFunction() === 'checkAbsences').length, 1);
+
+  // 第二次只補 LIFF 網址；觸發器不重複
+  r = ctx.applySetupInputs_({ liffUrl: ' https://liff.line.me/2011787638-GnWx6RfM ' });
+  assert.strictEqual(setting('LIFF網址'), 'https://liff.line.me/2011787638-GnWx6RfM');
+  assert.strictEqual(triggers.length, 1);
+
+  // 共用簽到網頁向後端要 LIFF ID
+  const cfg = JSON.parse(ctx.doGet({ parameter: { config: '1' } }).text);
+  assert.strictEqual(cfg.liffId, '2011787638-GnWx6RfM');
+  assert.strictEqual(ctx.doGet({ parameter: {} }).text, 'line-checkin OK');
 });

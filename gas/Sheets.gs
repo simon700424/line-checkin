@@ -117,7 +117,9 @@ function getSettings_() {
     earlyMin: Number(s['簽到提前分鐘']) || 15,
     graceMin: Number(s['遲到寬限分鐘']) || 0,
     delayMin: Number(s['通知延遲分鐘']) || 10,
-    maxAccuracy: Number(s['定位精度上限公尺']) || 150
+    maxAccuracy: Number(s['定位精度上限公尺']) || 150,
+    execUrl: s['網頁應用程式網址'] || '',
+    endpointUrl: s['LIFF Endpoint URL'] || ''
   };
 }
 

@@ -28,6 +28,7 @@ gas/          Google Apps Script 後端（貼到試算表的 Apps Script 編輯�
   Notify.gs     每分鐘檢查未到、傳名單給老師、老師確認後通知家長
   Contact.gs    聯絡未到學生（傳訊息、學生回覆、聯絡結果）
   Setup.gs      試算表選單、觸發器
+  Wizard.gs     一鍵設定精靈（貼上 token 等，自動完成其餘設定）
 docs/         LIFF 簽到網頁（放在 GitHub Pages）
 guide/        設定教學、家長同意書範本
 test/         Node 測試（邏輯與完整流程）
@@ -36,7 +37,8 @@ test/         Node 測試（邏輯與完整流程）
 
 ## 開始使用
 
-照著 [guide/設定教學.md](guide/設定教學.md) 做，約 1～2 小時。
+- **第一次安裝**：照 [guide/快速安裝.md](guide/快速安裝.md)，約 20～30 分鐘，只要會用瀏覽器：複製範本試算表 → 部署 → 一鍵設定。
+- 詳細步驟與常見問題：[guide/設定教學.md](guide/設定教學.md)
 
 ## 開發
 

@@ -37,6 +37,28 @@ function pushMessages_(userId, messages) {
   return lineApi_('message/push', { to: userId, messages: messages });
 }
 
+/** 用 token 查官方帳號資訊；token 無效回傳 null（一鍵設定用來驗證 token）。 */
+function botInfo_(token) {
+  var res = UrlFetchApp.fetch('https://api.line.me/v2/bot/info', {
+    headers: { Authorization: 'Bearer ' + token },
+    muteHttpExceptions: true
+  });
+  return res.getResponseCode() === 200 ? JSON.parse(res.getContentText()) : null;
+}
+
+/** 把 Messaging API 的 Webhook URL 設成這個網頁應用程式（設定後 LINE 會自動開啟 Use webhook）。 */
+function setWebhook_(execUrl) {
+  var res = UrlFetchApp.fetch('https://api.line.me/v2/bot/channel/webhook/endpoint', {
+    method: 'put',
+    contentType: 'application/json',
+    headers: { Authorization: 'Bearer ' + lineToken_() },
+    payload: JSON.stringify({ endpoint: execUrl }),
+    muteHttpExceptions: true
+  });
+  if (res.getResponseCode() !== 200) console.error('設定 Webhook 失敗 ' + res.getResponseCode() + ': ' + res.getContentText());
+  return res.getResponseCode() === 200;
+}
+
 function getProfile_(userId) {
   var res = UrlFetchApp.fetch('https://api.line.me/v2/bot/profile/' + encodeURIComponent(userId), {
     headers: { Authorization: 'Bearer ' + lineToken_() },

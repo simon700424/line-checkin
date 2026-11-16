@@ -106,3 +106,15 @@ test('findSetupProblems：課表班級對不到學生、學生缺學號、半徑
   assert.doesNotMatch(p, /陳慈宇/);
   assert.strictEqual(L.findSetupProblems(students, [{ id: 'D2', classes: '觀二甲', radius: 100 }], [friends[1]]).length, 0);
 });
+
+test('isExecUrl / liffIdFromUrl / sharedEndpointUrl', () => {
+  assert.ok(L.isExecUrl('https://script.google.com/macros/s/AKfycby47ZYl-x_y/exec'));
+  assert.ok(L.isExecUrl('https://script.google.com/a/macros/school.edu.tw/s/AKfy/exec'));
+  assert.ok(!L.isExecUrl('https://script.google.com/macros/s/AKfy/dev'));
+  assert.ok(!L.isExecUrl('https://evil.example/macros/s/AKfy/exec'));
+  assert.strictEqual(L.liffIdFromUrl('https://liff.line.me/2011787638-GnWx6RfM'), '2011787638-GnWx6RfM');
+  assert.strictEqual(L.liffIdFromUrl('2011787638-GnWx6RfM'), '2011787638-GnWx6RfM');
+  assert.strictEqual(L.liffIdFromUrl('https://example.com'), '');
+  assert.strictEqual(L.sharedEndpointUrl('https://script.google.com/macros/s/A/exec'),
+    'https://simon700424.github.io/line-checkin/?api=https%3A%2F%2Fscript.google.com%2Fmacros%2Fs%2FA%2Fexec');
+});

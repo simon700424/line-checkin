@@ -4,7 +4,16 @@
  *  - LIFF 頁面呼叫（body 內有 action）
  */
 
-function doGet() {
+/**
+ * GET：
+ *  - ?config=1 → 共用簽到網頁用來取得這所學校的 LIFF ID（只回公開資訊）
+ *  - 其他 → 健康檢查
+ */
+function doGet(e) {
+  if (e && e.parameter && e.parameter.config) {
+    var s = getSettings_();
+    return json_({ ok: true, liffId: liffIdFromUrl(s.liffUrl), schoolName: s.schoolName });
+  }
   return ContentService.createTextOutput('line-checkin OK');
 }
 

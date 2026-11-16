@@ -52,7 +52,19 @@
 <script src="config.js"></script>
 <script>
 (function () {
-  var cfg = window.APP_CONFIG;
+  var cfg = window.APP_CONFIG || {};
+  // 共用簽到網頁：各校的後端網址放在網址參數 ?api=…/exec，LIFF ID 再向該校後端要。
+  // 沒有 api 參數時，沿用 config.js（原本自己架網頁的學校）。
+  var EXEC_RE = /^https:\/\/script\.google\.com\/(a\/macros\/[A-Za-z0-9.-]+|macros)\/s\/[A-Za-z0-9_-]+\/exec$/;
+  function resolveConfig() {
+    var apiUrl = new URLSearchParams(location.search).get('api');
+    if (!apiUrl) return Promise.resolve(cfg);
+    if (!EXEC_RE.test(apiUrl)) return Promise.reject(new Error('簽到網址的設定不正確，請通知老師。'));
+    return fetch(apiUrl + '?config=1').then(function (r) { return r.json(); }).then(function (c) {
+      if (!c.liffId) throw new Error('學校的簽到系統還沒完成設定（缺 LIFF 網址），請通知老師。');
+      return { API_URL: apiUrl, LIFF_ID: c.liffId };
+    });
+  }
   var app = document.getElementById('app');
   var idToken = null;
 
@@ -221,12 +233,15 @@
     api('me').then(render).catch(function () { showError('連線失敗，請稍後再試。'); });
   }
 
-  liff.init({ liffId: cfg.LIFF_ID }).then(function () {
-    if (!liff.isLoggedIn()) { liff.login(); return; }
-    idToken = liff.getIDToken();
-    if (!idToken) return showError('無法取得登入資訊，請確認 LIFF 的 Scope 有勾選 openid 與 profile。');
-    load();
-  }).catch(function (e) { showError('LIFF 初始化失敗：' + e.message); });
+  resolveConfig().then(function (c) {
+    cfg = c;
+    return liff.init({ liffId: cfg.LIFF_ID }).then(function () {
+      if (!liff.isLoggedIn()) { liff.login(); return; }
+      idToken = liff.getIDToken();
+      if (!idToken) return showError('無法取得登入資訊，請確認 LIFF 的 Scope 有勾選 openid 與 profile。');
+      load();
+    }, function (e) { showError('LIFF 初始化失敗：' + e.message); });
+  }).catch(function (e) { showError(e.message || '連線失敗，請稍後再試。'); });
 })();
 </script>
 </body>

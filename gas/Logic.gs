@@ -153,3 +153,22 @@ function findSetupProblems(students, courses, friends) {
   });
   return problems;
 }
+
+/** 大家共用的簽到網頁（放在 GitHub Pages），各校的後端網址放在網址參數 api 裡。 */
+var SHARED_PAGE_URL = 'https://simon700424.github.io/line-checkin/';
+
+/** 是否為 Apps Script 網頁應用程式的 /exec 網址（含 Google Workspace 網域版）。 */
+function isExecUrl(url) {
+  return /^https:\/\/script\.google\.com\/(a\/macros\/[A-Za-z0-9.-]+|macros)\/s\/[A-Za-z0-9_-]+\/exec$/.test(String(url || '').trim());
+}
+
+/** 從 LIFF 網址（https://liff.line.me/1234567890-AbCdEfGh）或 LIFF ID 本身取出 LIFF ID；取不到回傳 ''。 */
+function liffIdFromUrl(text) {
+  var m = String(text || '').trim().match(/(?:^|liff\.line\.me\/)(\d{6,}-[A-Za-z0-9]+)(?:[/?#]|$)/);
+  return m ? m[1] : '';
+}
+
+/** 填進 LINE LIFF「Endpoint URL」的網址：共用簽到網頁 + 這所學校的後端網址。 */
+function sharedEndpointUrl(execUrl) {
+  return SHARED_PAGE_URL + '?api=' + encodeURIComponent(String(execUrl).trim());
+}

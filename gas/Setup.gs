@@ -2,6 +2,8 @@
 
 function onOpen() {
   SpreadsheetApp.getUi().createMenu('簽到系統')
+    .addItem('★ 一鍵設定（第一次安裝用這個）', 'runSetupWizard')
+    .addSeparator()
     .addItem('1. 初始化試算表', 'setupSheets')
     .addItem('2. 啟用自動通知（每分鐘檢查）', 'installTrigger')
     .addItem('3. 檢查設定（班級、學號、配對）', 'checkSetup')
@@ -48,6 +50,14 @@ function testPushSelected() {
 
 /** 檢查名單、課表、配對是否對得上，用對話框列出問題。 */
 function checkSetup() {
+  var problems = setupProblems_();
+  SpreadsheetApp.getUi().alert(problems.length
+    ? '發現 ' + problems.length + ' 個問題：\n\n・' + problems.join('\n・')
+    : '✅ 設定看起來都沒問題！');
+}
+
+/** 檢查設定的問題清單（選單「檢查設定」與一鍵設定共用）。 */
+function setupProblems_() {
   var problems = [];
   var courses = getCourses_(problems);
   problems = problems.concat(findSetupProblems(getStudents_(), courses, getFriends_()));
@@ -60,7 +70,5 @@ function checkSetup() {
   if (!ScriptApp.getProjectTriggers().some(function (t) { return t.getHandlerFunction() === 'checkAbsences'; })) {
     problems.push('還沒啟用自動通知（選單 2）。');
   }
-  SpreadsheetApp.getUi().alert(problems.length
-    ? '發現 ' + problems.length + ' 個問題：\n\n・' + problems.join('\n・')
-    : '✅ 設定看起來都沒問題！');
+  return problems;
 }
